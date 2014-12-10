@@ -2865,71 +2865,270 @@ net.brehaut.ClojureTools = (function (SH) {
     build_tree: build_tree
   };
 })(SyntaxHighlighter);
-</script><title>mvxcvi/clj-pgp -- Marginalia</title></head><body><table><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#mvxcvi.crypto.pgp.tags" name="mvxcvi.crypto.pgp.tags"><h1 class="project-name">mvxcvi.crypto.pgp.tags</h1><a class="toc-link" href="toc.html">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>Vars which map Cloure keywords to numeric BouncyCastle tag codes.</p>
-</td><td class="codes"><pre class="brush: clojure">(ns mvxcvi.crypto.pgp.tags
+</script><title>mvxcvi/clj-pgp -- Marginalia</title></head><body><table><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#clj-pgp.generate" name="clj-pgp.generate"><h1 class="project-name">clj-pgp.generate</h1><a class="toc-link" href="toc.html">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>This namespace provides functionality to generate PGP keypairs and keyrings
+  using a convenient macro syntax.</p>
+
+<p>  The two primary supported key types are RSA keys (via <code>rsa-keypair-generator</code>)
+  and Elliptic Curve keys (via <code>ec-keypair-generator</code>). A set of the supported
+  named curves can be found in <code>elliptic-curve-names</code>.</p>
+
+<p>  To generate PGP keyrings with designater master keys and subkeys with specific
+  roles and restrictions, use the <code>generate-keys</code> macro. This returns a map with
+  <code>:public</code> and <code>:secret</code> entries containing the respective keyrings.</p>
+</td><td class="codes"><pre class="brush: clojure">(ns clj-pgp.generate
   (:require
-    [clojure.string :as str])
+    [clojure.string :as str]
+    (clj-pgp
+      [core :as pgp]
+      [tags :as tags]
+      [util :refer [arg-seq]]))
   (:import
-    (org.bouncycastle.bcpg
-      CompressionAlgorithmTags
-      HashAlgorithmTags
-      PublicKeyAlgorithmTags
-      SymmetricKeyAlgorithmTags)))</pre></td></tr><tr><td class="docs"><h2>Tag Functions</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Convert static 'tag' fields on the given class into a map of keywords to
-  numeric codes.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- map-tags
-  [^Class tags]
-  (let [field-&gt;entry
-        (fn [^java.lang.reflect.Field f]
-          (vector (-&gt; (.getName f)
-                      (str/replace \_ \-)
-                      .toLowerCase
-                      keyword)
-                  (.getInt f nil)))]
-    (-&gt;&gt; (.getFields tags)
-         (map field-&gt;entry)
-         (into {}))))</pre></td></tr><tr><td class="docs"><p>Coerce a value into a numeric tag code. The argument may be a keyword or a
-  number. If the tag map does not contain the value, an exception is thrown.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- tag-code
-  [tag-name tags value]
-  (cond
-    (keyword? value)
-    (if-let [code (tags value)]
-      code
-      (throw (IllegalArgumentException.
-               (str &quot;Invalid &quot; tag-name &quot; name &quot; value))))
-    (number? value)
-    (if (some #{value} (vals tags))
-      value
-      (throw (IllegalArgumentException.
-               (str &quot;Invalid &quot; tag-name &quot; code &quot; value))))
-    :else
+    java.security.SecureRandom
+    java.util.Date
+    org.bouncycastle.asn1.sec.SECNamedCurves
+    org.bouncycastle.asn1.x9.X9ECParameters
+    (org.bouncycastle.bcpg.sig
+      Features
+      KeyFlags)
+    (org.bouncycastle.crypto
+      AsymmetricCipherKeyPairGenerator)
+    (org.bouncycastle.crypto.generators
+      ECKeyPairGenerator
+      RSAKeyPairGenerator)
+    (org.bouncycastle.crypto.params
+      ECNamedDomainParameters
+      ECKeyGenerationParameters
+      RSAKeyGenerationParameters)
+    (org.bouncycastle.openpgp
+      PGPKeyPair
+      PGPKeyRingGenerator
+      PGPSignature
+      PGPSignatureSubpacketGenerator)
+    (org.bouncycastle.openpgp.operator
+      PBESecretKeyEncryptor
+      PGPDigestCalculator)
+    (org.bouncycastle.openpgp.operator.bc
+      BcPBESecretKeyEncryptorBuilder
+      BcPGPContentSignerBuilder
+      BcPGPDigestCalculatorProvider
+      BcPGPKeyPair)))</pre></td></tr><tr><td class="docs"><h2>KeyPair Generation</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Builds a new PGP keypair from a generator.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn generate-keypair
+  ^PGPKeyPair
+  [^AsymmetricCipherKeyPairGenerator generator
+   algorithm]
+  (BcPGPKeyPair.
+    (tags/public-key-algorithm-code algorithm)
+    (.generateKeyPair generator)
+    (Date.)))</pre></td></tr><tr><td class="docs"><p>Constructs a new generator for RSA keypairs with the given bit strength.
+  Other parameters may be customized with keyword options.</p>
+
+<p>  Opts may include:</p>
+
+<ul>
+<li><code>:random</code> a custom random number generator</li>
+<li><code>:exponent</code> RSA algorithm public exponent</li>
+<li><code>:certainty</code> threshold for probabilistic prime generation</li>
+</ul>
+</td><td class="codes"><pre class="brush: clojure">(defn rsa-keypair-generator
+  {:arglists '([strength &amp; opts])}
+  ^RSAKeyPairGenerator
+  [strength &amp; {:keys [random exponent certainty]
+               :or {random (SecureRandom/getInstance &quot;SHA1PRNG&quot;)
+                    exponent (BigInteger/valueOf 0x10001)
+                    certainty 80}}]
+  (doto (RSAKeyPairGenerator.)
+    (.init (RSAKeyGenerationParameters.
+             exponent
+             random
+             strength
+             certainty))))</pre></td></tr><tr><td class="docs"><p>Set of supported elliptic curves.</p>
+</td><td class="codes"><pre class="brush: clojure">(def elliptic-curve-names
+  (set (iterator-seq (SECNamedCurves/getNames))))</pre></td></tr><tr><td class="docs"><p>Constructs a new generator for keypairs on the named elliptic curve.</p>
+
+<p>  Opts may include:</p>
+
+<ul>
+<li><code>:random</code> a custom random number generator</li>
+</ul>
+</td><td class="codes"><pre class="brush: clojure">(defn ec-keypair-generator
+  {:arglists '([curve &amp; opts])}
+  [curve
+   &amp; {:keys [^SecureRandom random]
+      :or {random (SecureRandom/getInstance &quot;SHA1PRNG&quot;)}}]
+  (let [^X9ECParameters params (SECNamedCurves/getByName curve)]
+    (doto (ECKeyPairGenerator.)
+      (.init (ECKeyGenerationParameters.
+               (ECNamedDomainParameters.
+                 (SECNamedCurves/getOID curve)
+                 (.getCurve params)
+                 (.getG params)
+                 (.getN params)
+                 (.getH params)
+                 (.getSeed params))
+               random)))))</pre></td></tr><tr><td class="docs"><h2>Key Signatures</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Constructs a new generator for key signature subpackets. The given flags
+  will be applied to the key.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn signature-subpacket-generator
+  ^PGPSignatureSubpacketGenerator
+  [&amp; flags]
+  (let [generator (PGPSignatureSubpacketGenerator.)]
+    (when (seq flags)
+      (.setKeyFlags generator false (if (&lt; 1 (count flags))
+                                      (apply bit-or flags)
+                                      (first flags))))
+    generator))</pre></td></tr><tr><td class="docs"><p>Constructs a signature subpacket generator with a preset mode. This can be
+  one of <code>:master</code>, <code>:signing</code>, or <code>:encryption</code>.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn signature-generator
+  [mode]
+  (case mode
+    :master
+    (doto (signature-subpacket-generator
+            KeyFlags/SIGN_DATA
+            KeyFlags/CERTIFY_OTHER)
+      ; Request senders add additional checksums to the message (useful
+      ; when verifying unsigned messages).
+      (.setFeature false Features/FEATURE_MODIFICATION_DETECTION))
+    :signing
+    (signature-subpacket-generator
+      KeyFlags/ENCRYPT_COMMS
+      KeyFlags/ENCRYPT_STORAGE)
+    :encryption
+    (signature-subpacket-generator
+      KeyFlags/SIGN_DATA)))</pre></td></tr><tr><td class="docs"><p>Builds a function which sets preferences on a signature generator for
+  secondary cryptographic algorithms to prefer.</p>
+</td><td class="codes"><pre class="brush: clojure">(defmacro ^:private defpreference
+  [pref-type tag-&gt;code]
+  `(defn ~(symbol (str &quot;prefer-&quot; (str/lower-case pref-type) &quot;-algorithms!&quot;))
+     &quot;Sets the list of preferred algorithms on a signature generator for
+     use when sending messages to the key.&quot;
+     [generator# &amp; algorithms#]
+     (when-let [prefs# (arg-seq algorithms#)]
+       (~(symbol (str &quot;.setPreferred&quot; pref-type &quot;Algorithms&quot;))
+         ^PGPSignatureSubpacketGenerator generator#
+         false
+         (int-array (map ~tag-&gt;code prefs#))))))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defpreference Symmetric   tags/symmetric-key-algorithm-code)
+(defpreference Hash        tags/hash-algorithm-code)
+(defpreference Compression tags/compression-algorithm-code)</pre></td></tr><tr><td class="docs"><p>Sets a key expiration time on a signature generator. The lifetime is
+  expressed as a number of seconds since the key creation time.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn set-key-expiration!
+  [^PGPSignatureSubpacketGenerator generator
+   ^long lifetime]
+  (.setKeyExpirationTime generator true lifetime))</pre></td></tr><tr><td class="docs"><h2>Keyring Construction</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Constructs a new digest calculator for the given hash algorithm.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- digest-calculator
+  ^PGPDigestCalculator
+  [algorithm]
+  (.get (BcPGPDigestCalculatorProvider.)
+        (tags/hash-algorithm-code algorithm)))</pre></td></tr><tr><td class="docs"><p>Constructs a new encryptor which will lock secret keys with the given
+  passphrase. The encryption algorithm and passphrase hash algorithm may be
+  specified as optional keyword arguments.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- secret-key-encryptor
+  [^String passphrase
+   &amp; {:keys [enc-algo pass-algo]
+      :or {enc-algo :aes-256
+           pass-algo :sha256}}]
+  (.build (BcPBESecretKeyEncryptorBuilder.
+            (tags/symmetric-key-algorithm-code enc-algo)
+            (digest-calculator pass-algo))
+          (.toCharArray passphrase)))</pre></td></tr><tr><td class="docs"><p>Constructs a new generator for a keyring for a user-id, encrypted with the
+  given passphrase. The provided keypair will become the master key with any
+  options specified in the signature subpacket.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn keyring-generator
+  [^String user-id
+   ^String passphrase
+   ^PGPKeyPair master-key
+   ^PGPSignatureSubpacketGenerator master-sig-gen]
+  (PGPKeyRingGenerator.
+    PGPSignature/POSITIVE_CERTIFICATION
+    master-key
+    user-id
+    (digest-calculator :sha1)
+    (.generate master-sig-gen)
+    nil
+    (BcPGPContentSignerBuilder.
+      (tags/public-key-algorithm-code (pgp/key-algorithm master-key))
+      (tags/hash-algorithm-code :sha1))
+    (secret-key-encryptor passphrase)))</pre></td></tr><tr><td class="docs"><p>Adds a subkey and signature packet to a keyring genrator.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn add-subkey!
+  [^PGPKeyRingGenerator generator
+   ^PGPKeyPair subkey
+   ^PGPSignatureSubpacketGenerator sig-gen]
+  (.addSubKey generator subkey (.generate sig-gen) nil))</pre></td></tr><tr><td class="docs"><p>Generates both the public and secret keyrings from the given generator.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn generate-keyrings
+  [^PGPKeyRingGenerator keyring-gen]
+  {:public (.generatePublicKeyRing keyring-gen)
+   :secret (.generateSecretKeyRing keyring-gen)})</pre></td></tr><tr><td class="docs"><h2>Keyring Specification</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Checks a single key specification, updating the map with either a master-key
+  or subkey entry.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- group-key-spec
+  [spec-map spec]
+  (when-not (list? spec)
     (throw (IllegalArgumentException.
-             (str &quot;Unknown &quot; tag-name &quot; identifier &quot; value)))))</pre></td></tr><tr><td class="docs"><p>Look up the keyword for a tag from the numeric code.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn lookup
-  [tags code]
-  (some #(if (= (val %) code) (key %)) tags))</pre></td></tr><tr><td class="docs"><h2>Tag Definitions</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Defines a tag map and coersion function from fields on the given class.</p>
-</td><td class="codes"><pre class="brush: clojure">(defmacro ^:private deftags
-  [cls]
-  (let [tag-name (-&gt; (name cls)
-                     (as-&gt; s (subs s 0 (- (count s) 4)))
-                     (str/replace #&quot;([a-z])([A-Z])&quot; &quot;$1-$2&quot;)
-                     str/lower-case
-                     symbol)
-        tag-map (symbol (str tag-name \s))]
-    `(do
-       (def ~tag-map
-         ~(str &quot;Map of &quot; tag-name &quot; tags.&quot;)
-         (map-tags ~cls))
-       (defn ~tag-name
-         ~(str &quot;Validate and coerce the argument into a &quot; tag-name &quot; tag code.&quot;)
-         [value#]
-         (tag-code ~(str tag-name) ~tag-map value#)))))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(deftags CompressionAlgorithmTags)
-(deftags HashAlgorithmTags)
-(deftags PublicKeyAlgorithmTags)
-(deftags SymmetricKeyAlgorithmTags)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/gdeer81/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
+             (str &quot;Key specifications must be lists: &quot; spec))))
+  (if (= 'master-key (first spec))
+    (if (:master spec-map)
+      (throw (IllegalArgumentException.
+               (str &quot;Cannot specify multiple master-key specs: &quot; spec)))
+      (assoc spec-map :master spec))
+    (update-in spec-map [:subkeys] conj spec)))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defn- subpacket-&gt;fn
+  [packet]
+  (when-not (list? packet)
+    (throw (IllegalArgumentException.
+             (str &quot;Signature subpacket forms must be lists: &quot; packet))))
+  (let [fns {'prefer-symmetric   `prefer-symmetric-algorithms!
+             'prefer-hash        `prefer-hash-algorithms!
+             'prefer-compression `prefer-compression-algorithms!
+             'expires            `set-key-expiration!}
+        [packet-type &amp; args] packet]
+    (when-not (contains? fns packet-type)
+      (throw (IllegalArgumentException.
+               (str &quot;Unknown signature subpacket type: &quot; packet-type))))
+    (cons (fns packet-type) args)))</pre></td></tr><tr><td class="docs"><p>Standard form to create a list of keypair with a doto block around the
+  signature generator to apply the subpackets.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- keypair-with-signature-subpackets
+  [sig-generator keypair sig-subpackets]
+  [(if (and (list? keypair) (= 'keypair (first keypair)))
+     (cons `generate-keypair (rest keypair))
+     keypair)
+   (if (seq sig-subpackets)
+     `(doto ~sig-generator
+        ~@(map subpacket-&gt;fn sig-subpackets))
+     sig-generator)])</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defn- master-keyring-generator
+  [user-id passphrase key-spec]
+  (let [[keypair &amp; sig-subpackets] (rest key-spec)]
+    `(keyring-generator
+       ~user-id ~passphrase
+       ~@(keypair-with-signature-subpackets
+           `(signature-generator :master)
+           keypair
+           sig-subpackets))))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defn- add-keyring-subkey
+  [[key-type keypair &amp; sig-subpackets]]
+  (cons
+    `add-subkey!
+    (keypair-with-signature-subpackets
+      (case key-type
+        encryption-key `(signature-generator :encryption)
+        signing-key    `(signature-generator :signing)
+        (throw (IllegalArgumentException.
+                 (str &quot;Unknown subkey type &quot; key-type))))
+      keypair
+      sig-subpackets)))</pre></td></tr><tr><td class="docs"><p>Macro to generate keys with a mini-language to specify preferences and
+  subkeys.</p>
+</td><td class="codes"><pre class="brush: clojure">(defmacro generate-keys
+  [user-id passphrase &amp; key-specs]
+  (let [spec-map (reduce group-key-spec {:subkeys []} key-specs)]
+    (when-not (:master spec-map)
+      (throw (IllegalArgumentException.
+               (str &quot;No master-key specification provided in key-specs: &quot; key-specs))))
+    `(generate-keyrings
+       (doto
+         ~(master-keyring-generator user-id passphrase (:master spec-map))
+         ~@(map add-keyring-subkey (:subkeys spec-map))))))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/gdeer81/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
 SyntaxHighlighter.all();
 
 // hackity hack

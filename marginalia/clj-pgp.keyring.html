@@ -2865,168 +2865,101 @@ net.brehaut.ClojureTools = (function (SH) {
     build_tree: build_tree
   };
 })(SyntaxHighlighter);
-</script><title>mvxcvi/clj-pgp -- Marginalia</title></head><body><table><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#mvxcvi.crypto.pgp.data" name="mvxcvi.crypto.pgp.data"><h1 class="project-name">mvxcvi.crypto.pgp.data</h1><a class="toc-link" href="toc.html">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>Data encryption and decryption functions.</p>
-</td><td class="codes"><pre class="brush: clojure">(ns mvxcvi.crypto.pgp.data
+</script><title>mvxcvi/clj-pgp -- Marginalia</title></head><body><table><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#clj-pgp.keyring" name="clj-pgp.keyring"><h1 class="project-name">clj-pgp.keyring</h1><a class="toc-link" href="toc.html">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>This namespace handles interactions with PGP keyrings.</p>
+
+<p>  Literal keyring files are directly supported, and key servers and other
+  stores can extend the <code>KeyRing</code> protocol for further extension.</p>
+</td><td class="codes"><pre class="brush: clojure">(ns clj-pgp.keyring
   (:require
     [byte-streams :as bytes]
-    [clojure.java.io :as io]
-    (mvxcvi.crypto.pgp
-      [key :refer [key-id public-key]]
-      [tags :as tags]
-      [util :refer [read-pgp-objects]]))
+    [clj-pgp.core :as pgp])
   (:import
-    (java.io
-      ByteArrayOutputStream
-      FilterOutputStream
-      InputStream
-      OutputStream)
-    (java.security
-      SecureRandom)
-    (org.bouncycastle.bcpg
-      ArmoredOutputStream)
     (org.bouncycastle.openpgp
-      PGPCompressedData
-      PGPCompressedDataGenerator
-      PGPEncryptedDataGenerator
-      PGPEncryptedDataList
-      PGPLiteralData
-      PGPLiteralDataGenerator
-      PGPPublicKeyEncryptedData
-      PGPUtil)
-    (org.bouncycastle.openpgp.operator.bc
-      BcPGPDataEncryptorBuilder
-      BcPublicKeyDataDecryptorFactory
-      BcPublicKeyKeyEncryptionMethodGenerator)))</pre></td></tr><tr><td class="docs"><h2>Data Encryption</h2>
-</td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn- literal-data-generator
-  ^OutputStream
-  [^OutputStream stream filename]
-  (.open (PGPLiteralDataGenerator.)
-    stream
-    PGPLiteralData/BINARY
-    (str filename)
-    PGPLiteralData/NOW
-    (byte-array 1024)))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn- compressed-data-generator
-  ^OutputStream
-  [^OutputStream stream algorithm]
-  (-&gt; algorithm
-      tags/compression-algorithm
-      PGPCompressedDataGenerator.
-      (.open stream)))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn- encrypted-data-generator
-  ^OutputStream
-  [^OutputStream stream algorithm pubkey]
-  (-&gt; algorithm
-      tags/symmetric-key-algorithm
-      BcPGPDataEncryptorBuilder.
-      (.setSecureRandom (SecureRandom.))
-      PGPEncryptedDataGenerator.
-      (doto (.addMethod (BcPublicKeyKeyEncryptionMethodGenerator. (public-key pubkey))))
-      (.open stream (byte-array 1024))))</pre></td></tr><tr><td class="docs"><p>Wraps the given output stream with encryption layers. The data will be
-  encrypted with a symmetric algorithm, whose key will be encrypted by the
-  given PGP public key.</p>
+      PGPPublicKeyRing
+      PGPPublicKeyRingCollection
+      PGPSecretKeyRing
+      PGPSecretKeyRingCollection
+      PGPUtil)))</pre></td></tr><tr><td class="docs"><p>Protocol for obtaining PGP keys.</p>
+</td><td class="codes"><pre class="brush: clojure">(defprotocol KeyRing
+  (list-public-keys [this]
+    &quot;Enumerates the available public keys.&quot;)
+  (list-secret-keys [this]
+    &quot;Enumerates the available secret keys.&quot;)
+  (get-public-key [this id]
+    &quot;Loads a public key by id.&quot;)
+  (get-secret-key [this id]
+    &quot;Loads a secret key by id.&quot;))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(extend-protocol KeyRing
 
-<p>  Opts may contain:
-  - :algorithm    symmetric key algorithm to use
-  - :compress     if specified, compress the cleartext with the given algorithm
-  - :armor        whether to ascii-encode the output
-  - :filename     optional name to give to the literal data packet</p>
-</td><td class="codes"><pre class="brush: clojure">(defn encrypt-stream
-  ^OutputStream
-  [^OutputStream output
-   pubkey
-   opts]
-  (let [wrap-stream
-        (fn [streams wrapper &amp; args]
-          (conj streams (apply wrapper (last streams) args)))
-        streams
-        (-&gt;
-          (vector output)
-          (cond-&gt;
-            (:armor opts)
-            (wrap-stream
-              #(ArmoredOutputStream. %)))
-          (wrap-stream
-            encrypted-data-generator
-            (:algorithm opts :aes-256)
-            pubkey)
-          (cond-&gt;
-            (:compress opts)
-            (wrap-stream
-              compressed-data-generator
-              (:compress opts)))
-          (wrap-stream
-            literal-data-generator
-            (:filename opts &quot;&quot;))
-          rest reverse)]
-    (proxy [FilterOutputStream] [(first streams)]
-      (close []
-        (dorun (map #(.close ^OutputStream %) streams))))))</pre></td></tr><tr><td class="docs"><p>Encrypts the given data source and returns an array of bytes with the
-  encrypted value. Opts are as in encrypt-stream.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn encrypt
-  ([data pubkey]
-   (encrypt data pubkey nil))
-  ([data pubkey opt-key opt-val &amp; opts]
-   (encrypt data pubkey
-            (assoc (apply hash-map opts)
-                   opt-key opt-val)))
-  ([data pubkey opts]
-   (let [buffer (ByteArrayOutputStream.)]
-     (with-open [stream (encrypt-stream buffer pubkey opts)]
-       (io/copy (bytes/to-input-stream data) stream))
-     (.toByteArray buffer))))</pre></td></tr><tr><td class="docs"><h2>Data Decryption</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Reads a raw input stream to decode a PGPEncryptedDataList. Returns a sequence
-  of encrypted data objects.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- read-encrypted-data
-  [^InputStream input]
-  (when-let [object (-&gt; input PGPUtil/getDecoderStream read-pgp-objects first)]
-    (when-not (instance? PGPEncryptedDataList object)
-      (throw (IllegalStateException.
-               (str &quot;PGP object stream did not contain an encrypted data list:&quot;
-                    object))))
-    (iterator-seq (.getEncryptedDataObjects ^PGPEncryptedDataList object))))</pre></td></tr><tr><td class="docs"><p>Finds which of the encrypted data objects in the given list is decryptable
-  by a local private key. Returns a vector of the encrypted data and the
-  corresponding private key.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- find-data
-  [data-list get-privkey]
-  (-&gt;&gt;
-    data-list
-    (map (juxt identity (comp get-privkey key-id)))
-    (filter second)
-    first))</pre></td></tr><tr><td class="docs"><p>Wraps the given input stream with decryption layers. The get-privkey
-  function should accept a key-id and return the corresponding unlocked private
-  key, or nil if such a key is not available.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn decrypt-stream
-  ^InputStream
-  [^InputStream input
-   get-privkey]
-  (when-let [[^PGPPublicKeyEncryptedData encrypted-data privkey]
-             (-&gt; input
-                 read-encrypted-data
-                 (find-data get-privkey))]
-    (-&gt;
-      encrypted-data
-      (.getDataStream (BcPublicKeyDataDecryptorFactory. privkey))
-      read-pgp-objects
-      first
-      (as-&gt; object
-        (if (instance? PGPCompressedData object)
-          (-&gt; ^PGPCompressedData object .getDataStream read-pgp-objects first)
-          object)
-        (if (instance? PGPLiteralData object)
-          (.getInputStream ^PGPLiteralData object)
-          (throw (IllegalArgumentException.
-                   &quot;Encrypted PGP data did not contain a literal data packet.&quot;)))))))</pre></td></tr><tr><td class="docs"><p>Decrypts the given data source and returns an array of bytes with the
-  decrypted value.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn decrypt
-  [data get-privkey]
-  (let [buffer (ByteArrayOutputStream.)]
-    (with-open [stream (decrypt-stream
-                         (bytes/to-input-stream data)
-                         get-privkey)]
-      (io/copy stream buffer))
-    (.toByteArray buffer)))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/gdeer81/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
+  PGPPublicKeyRing
+
+  (list-public-keys
+    [this]
+    (-&gt;&gt; this .getPublicKeys iterator-seq))
+
+  (get-public-key
+    [this id]
+    (.getPublicKey this (pgp/key-id id)))
+
+
+  PGPPublicKeyRingCollection
+
+  (list-public-keys
+    [this]
+    (-&gt;&gt; this .getKeyRings iterator-seq (map list-public-keys) flatten))
+
+  (get-public-key
+    [this id]
+    (.getPublicKey this (pgp/key-id id)))
+
+
+  PGPSecretKeyRing
+
+  (list-public-keys
+    [this]
+    (-&gt;&gt; this .getPublicKeys iterator-seq))
+
+  (list-secret-keys
+    [this]
+    (-&gt;&gt; this .getSecretKeys iterator-seq))
+
+  (get-public-key
+    [this id]
+    (.getPublicKey this (pgp/key-id id)))
+
+  (get-secret-key
+    [this id]
+    (.getSecretKey this (pgp/key-id id)))
+
+
+  PGPSecretKeyRingCollection
+
+  (list-public-keys
+    [this]
+    (-&gt;&gt; this .getKeyRings iterator-seq (map list-public-keys) flatten))
+
+  (list-secret-keys
+    [this]
+    (-&gt;&gt; this .getKeyRings iterator-seq (map list-secret-keys) flatten))
+
+  (get-public-key
+    [this id]
+    (let [id (pgp/key-id id)]
+      (-&gt; this (.getSecretKeyRing id) (.getPublicKey id))))
+
+  (get-secret-key
+    [this id]
+    (.getSecretKey this (pgp/key-id id))))</pre></td></tr><tr><td class="docs"><p>Loads a public keyring collection from a data source.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn load-public-keyring
+  [source]
+  (with-open [stream (PGPUtil/getDecoderStream
+                       (bytes/to-input-stream source))]
+    (PGPPublicKeyRingCollection. stream)))</pre></td></tr><tr><td class="docs"><p>Loads a secret keyring collection from a data source.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn load-secret-keyring
+  [source]
+  (with-open [stream (PGPUtil/getDecoderStream
+                       (bytes/to-input-stream source))]
+    (PGPSecretKeyRingCollection. stream)))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/gdeer81/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
 SyntaxHighlighter.all();
 
 // hackity hack
