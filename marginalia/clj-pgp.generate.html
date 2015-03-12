@@ -3119,6 +3119,24 @@ net.brehaut.ClojureTools = (function (SH) {
       keypair
       sig-subpackets)))</pre></td></tr><tr><td class="docs"><p>Macro to generate keys with a mini-language to specify preferences and
   subkeys.</p>
+
+<p>  An example invocation that creates a master key with signing and encryption
+  subkeys:</p>
+
+<p>  ```
+  (pgp-gen/generate-keys
+    "test user" "test passphrase"
+    (master-key
+      (keypair rsa :rsa-general)
+      (prefer-symmetric :aes-256 :aes-128)
+      (prefer-hash :sha512 :sha256 :sha1)
+      (prefer-compression :zlib :bzip2))
+    (signing-key
+      (keypair rsa :rsa-general)
+      (expires 36000))
+    (encryption-key
+      (keypair rsa :rsa-general)))
+  ```</p>
 </td><td class="codes"><pre class="brush: clojure">(defmacro generate-keys
   [user-id passphrase &amp; key-specs]
   (let [spec-map (reduce group-key-spec {:subkeys []} key-specs)]

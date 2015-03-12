@@ -2884,6 +2884,7 @@ net.brehaut.ClojureTools = (function (SH) {
       PGPObjectFactory
       PGPPrivateKey
       PGPPublicKey
+      PGPPublicKeyRing
       PGPSecretKey
       PGPSignature
       PGPSignatureList
@@ -2902,29 +2903,46 @@ net.brehaut.ClojureTools = (function (SH) {
 (defalgorithms compression)
 (defalgorithms public-key)
 (defalgorithms symmetric-key)</pre></td></tr><tr><td class="docs"><h2>Public Key Coercion</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Coerces the argument into a PGP public key. Returns nil for other values.</p>
-</td><td class="codes"><pre class="brush: clojure">(defmulti public-key
-  class)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod public-key :default [_] nil)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod public-key PGPPublicKey
-  [^PGPPublicKey pubkey]
-  pubkey)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod public-key PGPSecretKey
-  [^PGPSecretKey seckey]
-  (.getPublicKey seckey))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod public-key PGPKeyPair
-  [^PGPKeyPair keypair]
-  (.getPublicKey keypair))</pre></td></tr><tr><td class="docs"><h2>Private Key Coercion</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Coerces the argument into a PGP private key. Returns nil for other values.</p>
-</td><td class="codes"><pre class="brush: clojure">(defmulti private-key
-  class)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod private-key :default [_] nil)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod private-key PGPPrivateKey
-  [^PGPPrivateKey privkey]
-  privkey)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod private-key PGPKeyPair
-  [^PGPKeyPair keypair]
-  (.getPrivateKey keypair))</pre></td></tr><tr><td class="docs"><h2>Keypair Identifiers</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Protocol for value types which contain or are coercible to a PGP public key.</p>
+</td><td class="codes"><pre class="brush: clojure">(defprotocol PublicKeyContainer
+  (public-key
+    [this]
+    &quot;Coerces the argument into a PGP public key. Returns nil for other values.&quot;))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(extend-protocol PublicKeyContainer
+  nil
+  (public-key [_] nil)
+
+  Object
+  (public-key [_] nil)
+
+  PGPPublicKey
+  (public-key [pubkey] pubkey)
+
+  PGPSecretKey
+  (public-key [seckey] (.getPublicKey seckey))
+
+  PGPKeyPair
+  (public-key [keypair] (.getPublicKey keypair))
+
+  PGPPublicKeyRing
+  (public-key [keyring] (.getPublicKey keyring)))</pre></td></tr><tr><td class="docs"><h2>Private Key Coercion</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Protocol for value types which contain or are coercible to a PGP private key.</p>
+</td><td class="codes"><pre class="brush: clojure">(defprotocol PrivateKeyContainer
+  (private-key
+    [this]
+    &quot;Coerces the argument into a PGP private key. Returns nil for other values.&quot;))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(extend-protocol PrivateKeyContainer
+  nil
+  (private-key [_] nil)
+
+  Object
+  (private-key [_] nil)
+
+  PGPPrivateKey
+  (private-key [privkey] privkey)
+
+  PGPKeyPair
+  (private-key [keypair] (.getPrivateKey keypair)))</pre></td></tr><tr><td class="docs"><h2>Keypair Identifiers</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Protocol for values which can be used as PGP key identifiers.</p>
 </td><td class="codes"><pre class="brush: clojure">(defprotocol KeyIdentifier
   (key-id
@@ -2949,30 +2967,38 @@ net.brehaut.ClojureTools = (function (SH) {
     (-&gt;&gt; (.getFingerprint pubkey)
          (map (partial format &quot;%02X&quot;))
          str/join)))</pre></td></tr><tr><td class="docs"><h2>Keypair Algorithms</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Returns a keyword identifying the public-key algorithm used by the given
-  value.</p>
-</td><td class="codes"><pre class="brush: clojure">(defmulti key-algorithm
-  class)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod key-algorithm nil [_] nil)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod key-algorithm :default
-  [value]
-  (tags/public-key-algorithm-tag value))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod key-algorithm PGPPublicKey
-  [^PGPPublicKey pubkey]
-  (tags/public-key-algorithm-tag
-    (.getAlgorithm pubkey)))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod key-algorithm PGPSecretKey
-  [^PGPSecretKey seckey]
-  (tags/public-key-algorithm-tag
-    (.getAlgorithm (.getPublicKey seckey))))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod key-algorithm PGPPrivateKey
-  [^PGPPrivateKey privkey]
-  (tags/public-key-algorithm-tag
-    (.getAlgorithm (.getPublicKeyPacket privkey))))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod key-algorithm PGPKeyPair
-  [^PGPKeyPair keypair]
-  (tags/public-key-algorithm-tag
-    (.getAlgorithm (.getPublicKey keypair))))</pre></td></tr><tr><td class="docs"><h2>Key Utilities</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Protocol for values which can use or identify a cryptographic algorithm.</p>
+</td><td class="codes"><pre class="brush: clojure">(defprotocol KeyAlgorithmIdentifier
+  (key-algorithm
+    [value]
+    &quot;Returns a keyword identifying the key algorithm used by the given value.&quot;))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(extend-protocol KeyAlgorithmIdentifier
+  nil
+  (key-algorithm [_] nil)
+
+  Object
+  (key-algorithm [value]
+    (tags/public-key-algorithm-tag value))
+
+  PGPPublicKey
+  (key-algorithm [pubkey]
+    (tags/public-key-algorithm-tag
+      (.getAlgorithm pubkey)))
+
+  PGPSecretKey
+  (key-algorithm [seckey]
+    (tags/public-key-algorithm-tag
+      (.getAlgorithm (.getPublicKey seckey))))
+
+  PGPPrivateKey
+  (key-algorithm [privkey]
+    (tags/public-key-algorithm-tag
+      (.getAlgorithm (.getPublicKeyPacket privkey))))
+
+  PGPKeyPair
+  (key-algorithm [keypair]
+    (tags/public-key-algorithm-tag
+      (.getAlgorithm (.getPublicKey keypair)))))</pre></td></tr><tr><td class="docs"><h2>Key Utilities</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Returns a map of information about the given key.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn key-info
   [k]
@@ -3045,11 +3071,10 @@ net.brehaut.ClojureTools = (function (SH) {
   does not contain a public key value.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn decode-public-key
   [data]
-  (when-let [pubkey (first (decode data))]
-    (when-not (instance? PGPPublicKey pubkey)
-      (throw (IllegalStateException.
-               (str &quot;Data did not contain a public key: &quot; pubkey))))
-    pubkey))</pre></td></tr><tr><td class="docs"><p>Decodes a sequence of signatures from the given data. Throws an exception if
+  (let [value (first (decode data))]
+    (or (public-key value)
+        (throw (IllegalStateException.
+                 (str &quot;Data did not contain a public key: &quot; value))))))</pre></td></tr><tr><td class="docs"><p>Decodes a sequence of signatures from the given data. Throws an exception if
   the data does not contain a signature list.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn decode-signatures
   [data]
