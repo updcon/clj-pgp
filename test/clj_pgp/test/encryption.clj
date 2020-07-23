@@ -1,22 +1,19 @@
 (ns clj-pgp.test.encryption
   (:require
-    [byte-streams :refer [bytes=]]
-    [clojure.java.io :as io]
-    [clojure.test :refer :all]
-    [clojure.test.check :as check]
-    [clojure.test.check.generators :as gen]
-    [clojure.test.check.properties :as prop]
-    (clj-pgp
-      [core :as pgp]
-      [generate :as pgp-gen]
-      [message :as pgp-msg]
-      [tags :as tags])
+    [byte-streams :refer [bytes=] :as bytes]
+    [clj-pgp.core :as pgp]
+    [clj-pgp.error :as error]
+    [clj-pgp.generate :as pgp-gen]
+    [clj-pgp.message :as pgp-msg]
     [clj-pgp.test.keys :refer
      [gen-ec-keyspec
       gen-rsa-keyspec
-      memospec->keypair]])
+      spec->keypair
+      memospec->keypair]]
+    [clojure.test :refer [deftest testing is]]
+    [clojure.test.check.generators :as gen]
+    [clojure.test.check.properties :as prop])
   (:import
-    java.io.ByteArrayOutputStream
     java.security.SecureRandom))
 
 
@@ -35,7 +32,7 @@
                        :cipher cipher
                        :armor armor)]
       (is (not (bytes= data ciphertext))
-        "ciphertext bytes differ from data")
+          "ciphertext bytes differ from data")
       (doseq [decryptor encryptors]
         (is (bytes= data (pgp-msg/decrypt ciphertext decryptor))
             "decrypting the ciphertext returns plaintext"))
@@ -79,8 +76,8 @@
         "Encryption with no encryptors throws an exception")
     (is (thrown? IllegalArgumentException
           (pgp-msg/encrypt data :not-an-encryptor
-                       :integrity-check false
-                       :random (SecureRandom.)))
+                           :integrity-check false
+                           :random (SecureRandom.)))
         "Encryption with an invalid encryptor throws an exception")
     (is (thrown? IllegalArgumentException
           (pgp-msg/encrypt data ["bar" "baz"]))
@@ -96,7 +93,16 @@
           "Decrypting with a keypair-retrieval function returns the data.")
       (is (thrown? IllegalArgumentException
             (pgp-msg/decrypt ciphertext "passphrase"))
-          "Decrypting without a matching key throws an exception"))))
+          "Decrypting without a matching key throws an exception")
+      (testing "should allow overriding error behavior with custom behavior"
+        (let [error-occured? (atom false)
+              error-handler (fn [_ _ _ _]
+                              (reset! error-occured? true)
+                              nil)]
+          (with-redefs [pgp/read-next-object (fn [_] (throw (Exception. "Simulating PGP nextObject error")))]
+            (binding [error/*handler* error-handler]
+              (pgp-msg/decrypt ciphertext (constantly keypair))
+              (is @error-occured? "A PGP error was simulated but not passed to the error handler."))))))))
 
 
 (deftest encryption-scenarios
@@ -122,3 +128,36 @@
        [:ec :ecdh "sect409r1"]]
       "Good news, everyone!"
       :bzip2 :aes-256 true)))
+
+
+(defn- test-multiple-packages-scenario
+  [data encryptor & opts]
+  (let [packages (for [data (repeat 3 data)]
+                   (apply pgp-msg/package data :encryptors [encryptor] opts))]
+    (is
+      (every?
+        (fn check-message
+          [message]
+          (bytes= data (:data message)))
+        (apply pgp-msg/read-messages (bytes/to-input-stream packages) :decryptor encryptor opts)))))
+
+
+(deftest multiple-packages
+  (testing "PBE encryption"
+    (test-multiple-packages-scenario
+      "Secret stuff to hide from prying eyes"
+      "s3cr3t"))
+  (testing "compressed PBE encrpytion"
+    (test-multiple-packages-scenario
+      "secrets"
+      "p@ssw0rdz"
+      :compress :zip))
+  (testing "compressed RSA key encryption"
+    (test-multiple-packages-scenario
+      "More secretz"
+      (spec->keypair [:rsa :rsa-general 1024])
+      :compress :zip))
+  (testing "RSA key encryption"
+    (test-multiple-packages-scenario
+      "RSA secrets"
+      (spec->keypair [:rsa :rsa-general 1024]))))

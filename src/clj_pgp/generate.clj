@@ -10,16 +10,17 @@
   roles and restrictions, use the `generate-keys` macro. This returns a map with
   `:public` and `:secret` entries containing the respective keyrings."
   (:require
-    [clojure.string :as str]
-    (clj-pgp
-      [core :as pgp]
-      [tags :as tags]
-      [util :refer [arg-seq]]))
+    [clj-pgp.core :as pgp]
+    [clj-pgp.tags :as tags]
+    [clj-pgp.util :refer [arg-seq]]
+    [clojure.string :as str])
   (:import
     java.security.SecureRandom
     java.util.Date
-    org.bouncycastle.asn1.sec.SECNamedCurves
-    org.bouncycastle.asn1.x9.X9ECParameters
+    (org.bouncycastle.asn1.sec
+      SECNamedCurves)
+    (org.bouncycastle.asn1.x9
+      X9ECParameters)
     (org.bouncycastle.bcpg.sig
       Features
       KeyFlags)
@@ -29,8 +30,8 @@
       ECKeyPairGenerator
       RSAKeyPairGenerator)
     (org.bouncycastle.crypto.params
-      ECNamedDomainParameters
       ECKeyGenerationParameters
+      ECNamedDomainParameters
       RSAKeyGenerationParameters)
     (org.bouncycastle.openpgp
       PGPKeyPair
@@ -38,7 +39,6 @@
       PGPSignature
       PGPSignatureSubpacketGenerator)
     (org.bouncycastle.openpgp.operator
-      PBESecretKeyEncryptor
       PGPDigestCalculator)
     (org.bouncycastle.openpgp.operator.bc
       BcPBESecretKeyEncryptorBuilder
@@ -160,9 +160,10 @@
      [generator# & algorithms#]
      (when-let [prefs# (arg-seq algorithms#)]
        (~(symbol (str ".setPreferred" pref-type "Algorithms"))
-         ^PGPSignatureSubpacketGenerator generator#
-         false
-         (int-array (map ~tag->code prefs#))))))
+        ^PGPSignatureSubpacketGenerator generator#
+        false
+        (int-array (map ~tag->code prefs#))))))
+
 
 (defpreference Symmetric   tags/symmetric-key-algorithm-code)
 (defpreference Hash        tags/hash-algorithm-code)

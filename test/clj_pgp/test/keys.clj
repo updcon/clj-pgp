@@ -1,12 +1,10 @@
 (ns clj-pgp.test.keys
   (:require
+    [clj-pgp.core :as pgp]
+    [clj-pgp.generate :as pgp-gen]
+    [clj-pgp.keyring :as keyring]
     [clojure.java.io :as io]
-    [clojure.test.check.generators :as gen]
-    (clj-pgp
-      [core :as pgp]
-      [generate :as pgp-gen]
-      [keyring :as keyring]
-      [tags :as tags])))
+    [clojure.test.check.generators :as gen]))
 
 
 ;; ## Keyring Fixtures

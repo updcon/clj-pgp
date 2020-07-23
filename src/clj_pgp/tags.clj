@@ -54,7 +54,7 @@
 (defn code->tag
   "Look up the keyword for a tag from the numeric code."
   [tags code]
-  (some #(if (= (val %) code) (key %)) tags))
+  (some #(when (= (val %) code) (key %)) tags))
 
 
 

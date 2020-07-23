@@ -1,8 +1,9 @@
 /checkouts/
-/doc/
 /target/
-.lein-*
-.nrepl-port
+/.lein-*
+/.nrepl-port
+/.clj-kondo/.cache
+profiles.clj
 pom.xml
 pom.xml.asc
 *.jar
